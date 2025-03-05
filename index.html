@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title id="pageTitle">문제집 게임</title>
+  <style>
+    /* (이전과 동일한 CSS 코드 생략) */
+  </style>
+</head>
+<body>
+
+<!-- 배너 영역 -->
+<div class="banner" id="banner"></div>
+<!-- 게임 제목 -->
+<h1 id="gameTitle">단항식과 다항식</h1>
+
+<div class="loading-spinner" id="loadingSpinner">
+  <div class="spinner"></div>
+</div>
+<div class="container">
+  <!-- 시작 화면 -->
+  <div id="startSection">
+    <h2 class="start-title">이름을 입력하고 게임을 시작하세요</h2>
+    <div>
+      <input class="input-field" id="playerName" placeholder="이름을 입력하세요" type="text"/>
+      <button class="btn" id="startButton">게임시작</button>
+    </div>
+  </div>
+  <!-- 게임 진행 화면 -->
+  <div id="gameSection">
+    <div class="info-panel">
+      <div class="info-item">
+        <div class="info-label">경과시간</div>
+        <div class="info-value" id="timer">00:00</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">현재 점수</div>
+        <div class="info-value" id="currentScore">0</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">남은 기회</div>
+        <div class="chances-container">
+          <div class="chance-indicator" id="chance1"></div>
+          <div class="chance-indicator" id="chance2"></div>
+          <div class="chance-indicator" id="chance3"></div>
+        </div>
+      </div>
+    </div>
+    <div class="question-container" id="questionContainer">
+      <!-- 보기(지문) 영역 -->
+      <div class="passage" id="passage"></div>
+      <!-- 문제 영역 -->
+      <div class="question" id="question">
+        <div class="question-number" id="questionNumber">문제 1</div>
+        <div class="question-images" id="questionImages"></div>
+        <!-- 객관식 영역 -->
+        <div class="options" id="multipleChoice">
+          <div class="option" data-option="1">1</div>
+          <div class="option" data-option="2">2</div>
+          <div class="option" data-option="3">3</div>
+          <div class="option" data-option="4">4</div>
+          <div class="option" data-option="5">5</div>
+        </div>
+        <!-- 주관식 영역 -->
+        <div class="input-answer" id="shortAnswer" style="display: none;">
+          <input class="answer-input" id="answerInput" placeholder="답을 입력하세요" type="text"/>
+          <button class="btn" id="checkButton">확인</button>
+        </div>
+        <!-- 진행률 게이지 -->
+        <div class="progress-container">
+          <div class="progress-bar" id="progressBar"></div>
+          <div class="progress-indicator" id="progressIndicator">0/0</div>
+        </div>
+        <button class="btn" disabled id="nextButton">다음문제</button>
+      </div>
+    </div>
+  </div>
+  <!-- 결과 화면 -->
+  <div id="resultSection">
+    <div class="result-title">게임 종료</div>
+    <div class="result-info" id="finalScore"></div>
+    <div class="result-info" id="finalTime"></div>
+    <!-- 채점 내역 숨김 -->
+    <button class="btn" id="submitButton">전송하기</button>
+    <div id="serverResponse" style="margin-top:20px;"></div>
+  </div>
+</div>
+<script>
+    // ===== 필수 변수 설정 =====
+    const providedTitle = "중3 실수와 그 계산";
+    const providedPassageURL = "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/z14.png?raw=true";
+    const providedPassageProblemId = 14;
+    if(!providedTitle || !providedPassageURL) {
+      alert("필수 변수 값이 제공되지 않았습니다.");
+    }
+    
+    // 과목, 배너, 버튼/게이지바 색상 설정
+    const subject = "math";
+    const bannerURL = "";
+    const buttonColor = "#322D55";
+    const progressBarColor = "#F4A324";
+    
+    function updateTitles(newTitle) {
+      document.getElementById('pageTitle').textContent = newTitle;
+      document.getElementById('gameTitle').textContent = newTitle;
+    }
+    
+    // DOM 요소 참조
+    const elements = {
+      banner: document.getElementById("banner"),
+      gameTitle: document.getElementById("gameTitle"),
+      startSection: document.getElementById('startSection'),
+      gameSection: document.getElementById('gameSection'),
+      resultSection: document.getElementById('resultSection'),
+      playerName: document.getElementById('playerName'),
+      startButton: document.getElementById('startButton'),
+      timer: document.getElementById('timer'),
+      currentScore: document.getElementById('currentScore'),
+      questionContainer: document.getElementById('questionContainer'),
+      passage: document.getElementById('passage'),
+      question: document.getElementById('question'),
+      questionNumber: document.getElementById('questionNumber'),
+      questionImages: document.getElementById('questionImages'),
+      multipleChoice: document.getElementById('multipleChoice'),
+      shortAnswer: document.getElementById('shortAnswer'),
+      answerInput: document.getElementById('answerInput'),
+      checkButton: document.getElementById('checkButton'),
+      nextButton: document.getElementById('nextButton'),
+      submitButton: document.getElementById('submitButton'),
+      finalScore: document.getElementById('finalScore'),
+      finalTime: document.getElementById('finalTime'),
+      serverResponse: document.getElementById('serverResponse'),
+      progressBar: document.getElementById('progressBar'),
+      progressIndicator: document.getElementById('progressIndicator'),
+      loadingSpinner: document.getElementById('loadingSpinner'),
+      chance1: document.getElementById('chance1'),
+      chance2: document.getElementById('chance2'),
+      chance3: document.getElementById('chance3')
+    };
+    
+    // 전역 변수들
+    let score = 0, elapsedTime = 0;
+    let timerInterval = null, startTime = 0, gameOver = false, userAnswers = [];
+    let answerSubmitted = false;
+    let player = "";
+    let questions = [];
+    let completedQuestions = 0;
+    let remainingChances = 3;
+    let currentQuestionIndex = 0; // 현재 질문의 인덱스 (순차적 번호 표시용)
+    
+    // 문제 데이터 초기화 및 순서 랜덤화
+    function initQuestions() {
+      questions = [
+        {
+          id: 1,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/1.png?raw=true"],
+          answer: "-2",
+          type: "주관식",
+          score: 10
+        },
+        {
+          id: 3,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/3.png?raw=true"],
+          answer: "7a",
+          type: "주관식",
+          score: 10
+        },
+        {
+          id: 5,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/5.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/5-1.png?raw=true"
+          ],
+          answer: "3",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 6,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/6.png?raw=true"],
+          answer: "5",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 8,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/8.png?raw=true"],
+          answer: "3",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 9,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/9.png?raw=true"],
+          answer: "무",
+          type: "주관식",
+          score: 10
+        },
+        {
+          id: 10,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/10.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/10-1.png?raw=true"
+          ],
+          answer: "3",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 13,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/13.png?raw=true"],
+          answer: "5",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 14,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/14.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/14-1.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/14-2.png?raw=true"
+          ],
+          passage: providedPassageURL,
+          answer: "3",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 15,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/15.png?raw=true"],
+          answer: "1",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 16,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/16.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/16-1.png?raw=true"
+          ],
+          answer: "2",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 17,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/17.png?raw=true"],
+          answer: "1",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 20,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/20.png?raw=true"],
+          answer: "2",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 23,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/23.png?raw=true"],
+          answer: "5",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 24,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/24.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/24-1.png?raw=true"
+          ],
+          answer: "3",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 25,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/25.png?raw=true"],
+          answer: "4",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 26,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/26.png?raw=true"],
+          answer: "2",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 28,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/28.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/28-2.png?raw=true"
+          ],
+          answer: "2",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 29,
+          images: ["https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/29.png?raw=true"],
+          answer: "3",
+          type: "객관식",
+          score: 10
+        },
+        {
+          id: 30,
+          images: [
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/30.png?raw=true",
+            "https://github.com/hwimath2/imagrfile/blob/main/%EC%A4%913%20%EC%8B%A4%EC%88%98/30-1.png?raw=true"
+          ],
+          answer: "4",
+          type: "객관식",
+          score: 10
+        }
+      ];
+      // 문제 배열 무작위 섞기
+      questions.sort(() => Math.random() - 0.5);
+    }
+    
+    // 타이머 함수
+    const timerFunctions = {
+      start() {
+        startTime = Date.now();
+        timerInterval = setInterval(this.update, 1000);
+      },
+      update() {
+        elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+        const m = Math.floor(elapsedTime / 60);
+        const s = elapsedTime % 60;
+        elements.timer.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      },
+      stop() { clearInterval(timerInterval); },
+      formatTime(sec) {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${m}분 ${s}초`;
+      }
+    };
+    
+    // 초기화 함수
+    function resetGame() {
+      score = 0;
+      elapsedTime = 0;
+      gameOver = false;
+      userAnswers = [];
+      answerSubmitted = false;
+      completedQuestions = 0;
+      remainingChances = 3;
+      currentQuestionIndex = 0;
+      elements.timer.textContent = "00:00";
+      elements.currentScore.textContent = "0";
+      updateChancesDisplay();
+      updateProgressBar();
+    }
+    
+    // 진행률 게이지 업데이트
+    function updateProgressBar() {
+      const progress = (completedQuestions / questions.length) * 100;
+      elements.progressBar.style.width = `${progress}%`;
+      elements.progressIndicator.textContent = `${completedQuestions}/${questions.length}`;
+      elements.progressBar.style.transition = "width 0.7s cubic-bezier(0.22,0.61,0.36,1.2)";
+    }
+    
+    function triggerCompletionAnimation() {
+      return new Promise(resolve => {
+        elements.progressBar.style.width = "100%";
+        setTimeout(() => {
+          elements.progressBar.classList.add('completed-animation');
+          createCompletionParticles();
+          setTimeout(() => { resolve(); }, 1800);
+        }, 300);
+      });
+    }
+    
+    function createCompletionParticles() {
+      const container = document.querySelector('.progress-container');
+      const rect = container.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      for (let i = 0; i < 50; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        const colors = [progressBarColor, buttonColor, '#FFCC70', '#4CAF50', '#9b59b6'];
+        particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        const size = Math.random() * 10 + 5;
+        particle.style.width = `${size}px`;
+        particle.style.height = `${size}px`;
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * 180 + 50;
+        const translateX = Math.cos(angle) * distance;
+        const translateY = Math.sin(angle) * distance;
+        particle.style.setProperty('--translateX', `${translateX}px`);
+        particle.style.setProperty('--translateY', `${translateY}px`);
+        particle.style.left = `${centerX - rect.left}px`;
+        particle.style.top = `${centerY - rect.top}px`;
+        particle.style.animationDelay = `${Math.random() * 0.3}s`;
+        container.appendChild(particle);
+        setTimeout(() => { particle.remove(); }, 1500);
+      }
+    }
+    
+    function updateChancesDisplay() {
+      elements.chance1.className = remainingChances >= 1 ? 'chance-indicator' : 'chance-indicator lost';
+      elements.chance2.className = remainingChances >= 2 ? 'chance-indicator' : 'chance-indicator lost';
+      elements.chance3.className = remainingChances >= 3 ? 'chance-indicator' : 'chance-indicator lost';
+    }
+    
+    // 문제 로드: 현재 인덱스를 이용하여 질문을 가져옴
+    function loadQuestion() {
+      answerSubmitted = false;
+      elements.nextButton.disabled = true;
+      
+      // 옵션 초기화
+      document.querySelectorAll('.option').forEach(opt => { 
+        opt.classList.remove("selected", "correct", "incorrect");
+      });
+      
+      const q = questions[currentQuestionIndex];
+      if (!q) { endGame(true); return; }
+      
+      elements.questionNumber.textContent = `문제 ${currentQuestionIndex + 1}`;
+      
+      // 보기(지문) 설정
+      if (q.passage) {
+        elements.passage.style.display = 'block';
+        elements.passage.innerHTML = `<img src="${q.passage}" alt="보기" style="width:100%;">`;
+        elements.question.classList.add('with-passage');
+      } else {
+        elements.passage.style.display = 'none';
+        elements.question.classList.remove('with-passage');
+      }
+      
+      // 문제 이미지 설정
+      elements.questionImages.innerHTML = "";
+      const container = document.createElement('div');
+      container.className = "image-container";
+      q.images.forEach((imgUrl, idx) => {
+        const img = document.createElement('img');
+        img.src = imgUrl;
+        img.alt = `문제 ${currentQuestionIndex + 1} 이미지 ${idx + 1}`;
+        img.className = "question-image";
+        img.onload = function() {
+          if (idx > 0) {
+            const prevImg = container.querySelector(`img[alt="문제 ${currentQuestionIndex + 1} 이미지 ${idx}"]`);
+            if (prevImg) { prevImg.style.marginBottom = "0"; }
+          }
+        };
+        container.appendChild(img);
+      });
+      elements.questionImages.appendChild(container);
+      
+      // 문제 유형에 따른 UI 설정
+      if (q.type === "객관식") {
+        elements.multipleChoice.style.display = "flex";
+        elements.shortAnswer.style.display = "none";
+      } else {
+        elements.multipleChoice.style.display = "none";
+        elements.shortAnswer.style.display = "flex";
+        elements.answerInput.value = "";
+        elements.answerInput.style.backgroundColor = "";
+        elements.answerInput.style.borderColor = "";
+        elements.checkButton.disabled = true;
+      }
+      
+      // 마지막 문제인 경우 버튼 변경
+      if (currentQuestionIndex === questions.length - 1) {
+        elements.nextButton.textContent = "완료";
+        elements.nextButton.classList.add('complete-button');
+      } else {
+        elements.nextButton.textContent = "다음문제";
+        elements.nextButton.classList.remove('complete-button');
+      }
+    }
+    
+    // 객관식 옵션 선택 처리 (정답은 미표시)
+    function handleOptionClick(e) {
+      if (gameOver || answerSubmitted) return;
+      
+      const selectedOption = e.target.closest('.option');
+      if (!selectedOption) return;
+      
+      const q = questions[currentQuestionIndex];
+      const userAnswer = selectedOption.getAttribute('data-option');
+      const isCorrect = (userAnswer === q.answer.toString());
+      
+      answerSubmitted = true;
+      
+      if (isCorrect) {
+        selectedOption.classList.add("correct");
+        score += q.score;
+        elements.currentScore.textContent = score;
+      } else {
+        selectedOption.classList.add("incorrect");
+        remainingChances--;
+        updateChancesDisplay();
+        if (remainingChances <= 0) {
+          setTimeout(() => { endGame(false); }, 1000);
+          return;
+        }
+      }
+      
+      userAnswers.push({
+        questionId: q.id,
+        userAnswer: userAnswer,
+        correctAnswer: q.answer,
+        isCorrect: isCorrect,
+        score: isCorrect ? q.score : 0
+      });
+      elements.nextButton.disabled = false;
+    }
+    
+    // 주관식 확인 버튼 처리
+    function handleCheckButtonClick() {
+      if (gameOver || answerSubmitted) return;
+      
+      const userAnswer = elements.answerInput.value.trim().toLowerCase();
+      if (userAnswer === "") return;
+      
+      answerSubmitted = true;
+      
+      const q = questions[currentQuestionIndex];
+      const isCorrect = (userAnswer === q.answer.toString().toLowerCase());
+      
+      if (isCorrect) {
+        elements.answerInput.style.backgroundColor = "rgba(46, 204, 113, 0.2)";
+        elements.answerInput.style.borderColor = "var(--success-color)";
+        score += q.score;
+        elements.currentScore.textContent = score;
+      } else {
+        elements.answerInput.style.backgroundColor = "rgba(231, 76, 60, 0.2)";
+        elements.answerInput.style.borderColor = "var(--danger-color)";
+        remainingChances--;
+        updateChancesDisplay();
+        if (remainingChances <= 0) {
+          setTimeout(() => { endGame(false); }, 1000);
+          return;
+        }
+      }
+      
+      userAnswers.push({
+        questionId: q.id,
+        userAnswer: userAnswer,
+        correctAnswer: q.answer,
+        isCorrect: isCorrect,
+        score: isCorrect ? q.score : 0
+      });
+      
+      elements.nextButton.disabled = false;
+      elements.checkButton.disabled = true;
+    }
+    
+    // 주관식 입력 처리
+    function handleShortAnswerInput() {
+      if (gameOver || answerSubmitted) return;
+      elements.checkButton.disabled = elements.answerInput.value.trim() === "";
+    }
+    
+    // 다음 버튼 처리: 현재 인덱스를 증가시켜 로드
+    function handleNextButton() {
+      if (gameOver) return;
+      
+      completedQuestions++;
+      updateProgressBar();
+      
+      if (currentQuestionIndex === questions.length - 1) {
+        triggerCompletionAnimation().then(() => { endGame(true); });
+      } else {
+        currentQuestionIndex++;
+        loadQuestion();
+      }
+    }
+    
+    function endGame(completed = false) {
+      if (gameOver) return;
+      gameOver = true;
+      timerFunctions.stop();
+      displayResults();
+      elements.gameSection.style.display = "none";
+      elements.resultSection.style.display = "block";
+    }
+    
+    // 결과 표시 (정답/오답 내역은 제거)
+    function displayResults() {
+      const maxScore = questions.reduce((sum, q) => sum + q.score, 0);
+      elements.finalScore.textContent = `최종 점수: ${score}점 / ${maxScore}점`;
+      elements.finalTime.textContent = `경과 시간: ${timerFunctions.formatTime(elapsedTime)}`;
+    }
+    
+    // 결과 제출 처리
+    function handleSubmit() {
+      elements.loadingSpinner.style.display = "flex";
+      
+      const game = document.getElementById('pageTitle').textContent;
+      const name = player;
+      const finalScore = score;
+      const totalTime = elapsedTime;
+      
+      saveData(game, name, finalScore, totalTime);
+      
+      setTimeout(() => {
+        elements.loadingSpinner.style.display = "none";
+        elements.submitButton.disabled = true;
+      }, 1500);
+    }
+    
+    async function saveData(game, name, score, elapsedTime) {
+      const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+      const requestData = {
+          game,
+          name,
+          score: parseInt(score, 10),
+          elapsedTime: parseInt(elapsedTime, 10)
+      };
+      try {
+          const response = await fetch(FUNCTION_URL, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(requestData)
+          });
+          const responseData = await response.json();
+          if (response.ok) {
+              document.getElementById('serverResponse').innerText = "성공: 데이터가 성공적으로 전송되었습니다.";
+              document.getElementById('submitButton').disabled = true;
+          } else {
+              document.getElementById('serverResponse').innerText = "오류: 데이터 전송에 실패했습니다.";
+          }
+      } catch (error) {
+          console.error('요청 실패:', error);
+          document.getElementById('serverResponse').innerText = "네트워크 오류: 서버와 통신할 수 없습니다.";
+      }
+    }
+    
+    function setupEventListeners() {
+      elements.startButton.addEventListener('click', () => {
+        player = elements.playerName.value.trim();
+        if (!player) { alert("이름을 입력해주세요!"); return; }
+        resetGame();
+        elements.startSection.style.display = "none";
+        elements.gameSection.style.display = "block";
+        loadQuestion();
+        timerFunctions.start();
+      });
+      
+      elements.multipleChoice.addEventListener('click', handleOptionClick);
+      elements.answerInput.addEventListener('input', handleShortAnswerInput);
+      elements.checkButton.addEventListener('click', handleCheckButtonClick);
+      elements.nextButton.addEventListener('click', handleNextButton);
+      elements.submitButton.addEventListener('click', handleSubmit);
+    }
+    
+    window.onload = function() {
+      updateTitles(providedTitle);
+      
+      if (bannerURL) {
+        elements.banner.style.display = "block";
+        elements.banner.innerHTML = `<img src="${bannerURL}" alt="배너">`;
+      }
+      
+      document.querySelector(".info-item:nth-child(2)").style.display = "block";
+      document.querySelector(".info-item:nth-child(3)").style.display = "block";
+      
+      initQuestions(); // 문제 배열 초기화 및 랜덤화
+      setupEventListeners();
+    };
+  </script>
+</body>
+</html>
